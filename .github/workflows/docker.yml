@@ -1,0 +1,136 @@
+# 构建并推送本仓库内的所有 Docker 镜像到 GHCR (ghcr.io)
+#
+# 约定:
+#   - 每个含 Dockerfile 的一级目录 = 一个镜像,目录名即镜像名(以后新增镜像无需改 CI)
+#   - PR / 手动触发:只构建验证,不推送(手动触发可选推送)
+#   - push 到 main:构建并推送 <image>:latest
+#   - 推送形如 <image>-v<版本> 的 tag(如 helm-kubectl-v1.37.2-v4.3.1):
+#     只构建对应镜像,并推送为 <image>:v<版本>
+
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ['*-v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: '构建后推送到 ghcr.io'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REGISTRY: ghcr.io
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  # 选出本次需要构建的镜像
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      owner: ${{ steps.pick.outputs.owner }}
+      images: ${{ steps.pick.outputs.images }}
+      push: ${{ steps.pick.outputs.push }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Pick images to build
+        id: pick
+        run: |
+          set -eu
+
+          # 所有包含 Dockerfile 的一级目录 = 全部镜像
+          mapfile -t all < <(find . -mindepth 2 -maxdepth 2 -name Dockerfile \
+            | sed 's|^\./||; s|/Dockerfile$||' | sort)
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            # <image>-v<版本> tag 只构建对应镜像
+            image="${GITHUB_REF_NAME%%-v*}"
+            if [[ ! -f "$image/Dockerfile" ]]; then
+              echo "::error::tag ${GITHUB_REF_NAME} 前缀 ${image} 没有对应的镜像目录"
+              exit 1
+            fi
+            images="[$(printf '"%s"' "$image")]"
+          else
+            images=$(printf '%s\n' "${all[@]-}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+          fi
+
+          # PR 不推送;push 事件推送;手动触发按入参
+          push=false
+          [[ "$GITHUB_EVENT_NAME" == "push" ]] && push=true
+          [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "${{ inputs.push }}" == "true" ]] && push=true
+
+          # GHCR 镜像名要求全小写
+          {
+            echo "owner=${GITHUB_REPOSITORY_OWNER,,}"
+            echo "images=$images"
+            echo "push=$push"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "images: $images push: $push"
+
+  # 逐个镜像构建(多架构),按需推送
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.images != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.prepare.outputs.images) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: needs.prepare.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.owner }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=match,pattern=${{ matrix.image }}-(v.*),group=1
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image }}
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ needs.prepare.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### ${{ matrix.image }}"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
