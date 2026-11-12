@@ -4,7 +4,8 @@
 #   - 每个含 Dockerfile 的一级目录 = 一个镜像,目录名即镜像名(以后新增镜像无需改 CI)
 #   - PR / 手动触发:只构建验证,不推送(手动触发可选推送)
 #   - push 到 main:构建并推送 <image>:latest
-#   - 推送形如 <image>-v<版本> 的 tag(如 helm-kubectl-v1.37.2-v4.3.1):
+#   - 推送形如 <image>-v<版本> 的 tag(如 helm-kubectl-v4.3.1-v1.37.2,
+#     版本号顺序与镜像名一致:helm 在前,kubectl 在后):
 #     只构建对应镜像,并推送为 <image>:v<版本>
 
 name: docker
