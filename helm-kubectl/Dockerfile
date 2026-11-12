@@ -4,8 +4,8 @@
 #
 # 构建:
 #   docker build -t helm-kubectl:latest .
-#   docker build --build-arg KUBECTL_VERSION=v1.37.2 --build-arg HELM_VERSION=v4.3.1 \
-#     -t helm-kubectl:v1.37.2-v4.3.1 .
+#   docker build --build-arg HELM_VERSION=v4.3.1 --build-arg KUBECTL_VERSION=v1.37.2 \
+#     -t helm-kubectl:v4.3.1-v1.37.2 .
 #   docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/helm-kubectl:latest --push .
 #
 # 使用:

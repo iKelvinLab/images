@@ -11,7 +11,7 @@ GitHub Actions ([docker.yml](.github/workflows/docker.yml)) builds every top-lev
 | --- | --- |
 | Pull request | Multi-arch build, no push |
 | Push to `main` | Build + push `<image>:latest` |
-| Tag `<image>-v<ver>` (e.g. `helm-kubectl-v1.37.2-v4.3.1`) | Build only that image, push `<image>:v<ver>` |
+| Tag `<image>-v<ver>` (e.g. `helm-kubectl-v4.3.1-v1.37.2`, versions in image-name order: helm first, then kubectl) | Build only that image, push `<image>:v<ver>` |
 | Manual dispatch | Build, push optional via input |
 
 Builds are multi-arch (`linux/amd64` + `linux/arm64`) with GHA layer caching.
@@ -23,7 +23,7 @@ Lightweight image (Alpine-based, ~133MB) shipping the `kubectl` and `helm` CLIs,
 ```bash
 docker pull ghcr.io/ikelvinlab/helm-kubectl:latest   # or build locally:
 docker build -t helm-kubectl:latest helm-kubectl
-docker build --build-arg KUBECTL_VERSION=v1.37.2 --build-arg HELM_VERSION=v4.3.1 -t helm-kubectl:v1.37.2-v4.3.1 helm-kubectl
+docker build --build-arg HELM_VERSION=v4.3.1 --build-arg KUBECTL_VERSION=v1.37.2 -t helm-kubectl:v4.3.1-v1.37.2 helm-kubectl
 
 docker run --rm helm-kubectl kubectl version --client
 docker run --rm -v ~/.kube:/home/kube/.kube helm-kubectl helm list
